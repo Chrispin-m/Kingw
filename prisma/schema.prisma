@@ -1,0 +1,165 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  STUDENT
+  WRITER
+  SUPPORT
+  ADMIN
+}
+
+enum OrderStatus {
+  OPEN
+  BIDDING
+  IN_PROGRESS
+  COMPLETED
+  DELIVERED
+  DISPUTE
+  CANCELLED
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model User {
+  id             String   @id @default(cuid())
+  name           String?
+  email          String   @unique
+  emailVerified  DateTime? @map("email_verified")
+  passwordHash   String?   @map("password_hash") // Nullable for OAuth providers
+  role           UserRole
+  image          String?
+  rating         Float?    @default(0) // For writers
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  accounts       Account[]
+  orders         Order[]  @relation("OrderPlacedByStudent")
+  bids           Bid[]
+  chats          Chat[]
+  payments       Payment[]
+  payouts        WriterPayout[]
+  assignedOrders Order[]  @relation("OrderAssignedToWriter")
+
+  @@map("users")
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  title           String
+  subject         String
+  academicLevel   String      @map("academic_level") // e.g., "High School", "PhD"
+  pages           Int
+  deadline        DateTime
+  instructions    String
+  fileUrl         String?     @map("file_url") // Stored via Uploadthing
+  status          OrderStatus @default(OPEN)
+  finalPrice      Float?      @map("final_price") // What customer pays
+  studentId       String      @map("student_id")
+  writerId        String?     @map("writer_id") // Assigned writer
+
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  // Relations
+  student         User        @relation("OrderPlacedByStudent", fields: [studentId], references: [id])
+  writer          User?       @relation("OrderAssignedToWriter", fields: [writerId], references: [id])
+  bids            Bid[]
+  chats           Chat[]
+  payment         Payment?
+  payout          WriterPayout?
+
+  @@map("orders")
+}
+
+model Bid {
+  id        String   @id @default(cuid())
+  orderId   String   @map("order_id")
+  writerId  String   @map("writer_id")
+  amount    Float
+  status    String   @default("PENDING") // e.g., PENDING, ACCEPTED, REJECTED
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  order     Order    @relation(fields: [orderId], references: [id])
+  writer    User     @relation(fields: [writerId], references: [id])
+
+  @@map("bids")
+}
+
+model Chat {
+  id        String   @id @default(cuid())
+  orderId   String   @map("order_id")
+  senderId  String   @map("sender_id")
+  message   String
+  isFlagged Boolean  @default(false) @map("is_flagged")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  order     Order    @relation(fields: [orderId], references: [id])
+  sender    User     @relation(fields: [senderId], references: [id])
+
+  @@map("chats")
+}
+
+model Payment {
+  id        String   @id @default(cuid())
+  orderId   String   @unique @map("order_id")
+  userId    String   @map("user_id")
+  amount    Float
+  status    String   @default("PENDING") // e.g., PENDING, COMPLETED, FAILED
+  stripeId  String   @unique @map("stripe_id") // Stripe Checkout Session ID or Payment Intent ID
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  order     Order    @relation(fields: [orderId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@map("payments")
+}
+
+model WriterPayout {
+  id        String   @id @default(cuid())
+  writerId  String   @map("writer_id")
+  orderId   String   @unique @map("order_id")
+  amount    Float
+  status    String   @default("PENDING") // e.g., PENDING, PAID, FAILED
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  writer    User     @relation(fields: [writerId], references: [id])
+  order     Order    @relation(fields: [orderId], references: [id])
+
+  @@map("writer_payouts")
+}
+
+model AnalyticsClick {
+  id        String   @id @default(cuid())
+  latitude  Float
+  longitude Float
+  timestamp DateTime @default(now())
+
+  @@map("analytics_clicks")
+}
